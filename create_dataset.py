@@ -38,7 +38,8 @@ if __name__ == '__main__':
     parser.add_argument('--val',  type=float, default=0.1)
     parser.add_argument('--test', type=float, default=0.1)
     
-    parser.add_argument('--out', '-o',  type=str, default='./dataset')
+    #parser.add_argument('--out', '-o',  type=str, default='./dataset')
+    parser.add_argument('--out', '-o',  type=str, required=True)
     parser.add_argument('--train_txt', type=str, default='train.txt')
     parser.add_argument('--val_txt', type=str, default='val.txt')
     parser.add_argument('--test_txt', type=str, default='test.txt')
@@ -46,6 +47,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--resize', type=int, default=256)
+    parser.add_argument('--num_process', type=int, default=2)
 
     args = parser.parse_args()
     train_txt = os.path.join(args.out, args.train_txt)
@@ -104,8 +106,10 @@ if __name__ == '__main__':
     '''3. Resize pictures'''
     def resize_pictures(paths, dir_name, stdout): # stdout: if progress is printed
         new_dir = os.path.join(args.out, dir_name)
-        if not os.path.exists(new_dir):
+        try:
             os.mkdir(new_dir)
+        except:
+            pass
         new_paths = []
         N = len(paths)
         for i, path in enumerate(paths):
@@ -127,14 +131,21 @@ if __name__ == '__main__':
         return resize_pictures(*args)
 
     print('resizing pictures...')
-    p = Pool(2)
-    paths1 = paths[:len(paths)//2] # split data
-    paths2 = paths[len(paths)//2:] # split data
-    w_pairs = [(paths1, 'pictures', False), (paths2, 'pictures', True)]
-    new_paths1, new_paths2 = p.map(wrapper, w_pairs)
+    num_process = args.num_process
+    old_len = len(paths)
+    split_size  = -(-old_len // num_process) # 切り上げ
+
+    p = Pool(num_process)
+    split_paths = [paths[i:i+split_size]
+                   for i in range(0, old_len, split_size)] # 余りがある場合、最後で帳尻合わせ
+
+    w_pairs = [[paths, 'pictures', False] for paths in split_paths]
+    w_pairs[0][2] = True # 1つのプロセスの進捗を代表して表示するため
+    split_paths_new = p.map(wrapper, w_pairs)
     p.close()
 
-    paths = new_paths1 + new_paths2
+    paths = [p1 for p2 in split_paths_new for p1 in p2] # それぞれのプロセスの結果を結合
+    assert len(paths) == old_len
 
     
     '''4. Create dataset'''
